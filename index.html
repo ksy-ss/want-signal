@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signal Project</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        /* CSS 스타일 (디자인) */
+        :root {
+            --main-color: #6200ea;
+            --accent-color: #ffd700;
+            --bg-color: #f8f5ff;
+        }
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: var(--bg-color); margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 480px; margin: 0 auto; background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: var(--main-color); margin-bottom: 30px; line-height: 1.4; }
+        h1 span { color: var(--main-color); background: linear-gradient(120deg, transparent 60%, var(--accent-color) 60%); padding: 0 5px; }
+        
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 500; color: #555; }
+        select, input { width: 100%; padding: 12px; border: 2px solid #eee; border-radius: 12px; font-size: 16px; box-sizing: border-box; transition: 0.3s; }
+        select:focus, input:focus { border-color: var(--main-color); outline: none; }
+        
+        .btn-submit { width: 100%; background-color: var(--main-color); color: white; border: none; padding: 16px; border-radius: 12px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.3s; margin-top: 10px; }
+        .btn-submit:hover { opacity: 0.9; transform: translateY(-2px); }
+        .btn-stats { background-color: #fff; color: #555; border: 2px solid #eee; margin-top: 15px; font-size: 14px; }
+
+        /* 통계 영역 (초기엔 숨김) */
+        #statsSection { display: none; margin-top: 30px; border-top: 2px dashed #eee; padding-top: 20px; }
+        .chart-container { position: relative; height: 250px; width: 100%; margin-bottom: 20px; }
+        
+        .loading { text-align: center; display: none; margin: 10px 0; color: var(--main-color); }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1 id="mainTitle">로딩 중...</h1>
+
+        <div id="inputSection">
+            <div class="form-group">
+                <label id="keywordLabel">키워드</label>
+                <input type="text" id="keyword" placeholder="">
+            </div>
+
+            <div class="form-group">
+                <label id="typeLabel">방식</label>
+                <select id="typeSelect"></select>
+            </div>
+
+            <div class="form-group">
+                <label id="budgetLabel">예산</label>
+                <select id="budgetSelect"></select>
+            </div>
+
+            <div class="form-group">
+                <label id="timeLabel">시간</label>
+                <select id="timeSelect"></select>
+            </div>
+
+            <button class="btn-submit" id="submitBtn" onclick="sendSignal()">시그널 보내기</button>
+            <div class="loading" id="loadingMsg"><i class="fas fa-spinner fa-spin"></i> 전송 중...</div>
+            
+            <button class="btn-submit btn-stats" id="statsBtn" onclick="toggleStats()">📊 트렌드 보기</button>
+        </div>
+
+        <div id="statsSection">
+            <h3 id="statTitle" style="text-align: center;"></h3>
+            <h4 id="chartTitle1"></h4>
+            <div class="chart-container">
+                <canvas id="typeChart"></canvas>
+            </div>
+            <div id="rankList"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getDatabase, ref, push, onValue, query, limitToLast } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+
+        // ============================================================
+        // [중요] 사장님의 Firebase 설정값을 여기에 붙여넣으세요!
+        // ============================================================
+        const firebaseConfig = {
+    apiKey: "AIzaSyB6WjGUEn0fEg_k4Yk15bhzAFDoo7RcqWg",
+    authDomain: "want-log-v2.firebaseapp.com",
+    databaseURL: "https://want-log-v2-default-rtdb.firebaseio.com",
+    projectId: "want-log-v2",
+    storageBucket: "want-log-v2.firebasestorage.app",
+    messagingSenderId: "142800647324",
+    appId: "1:142800647324:web:e3100ec7b4daa8467ae959",
+    measurementId: "G-HZ4HBQH697"
+  };
+
+
+        // Firebase 초기화
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // ============================================================
+        // APP CONFIG 설정 (원하는 버전의 주석을 풀어서 사용하세요)
+        // ============================================================
+        
+        /* [옵션 1] 뷰티 시그널 */
+        /*
+        const APP_CONFIG = {
+            appName: "beauty_signal",
+            colors: { main: "#6200ea", accent: "#ffd700", bg: "#f8f5ff" },
+            text: {
+                mainTitle: "예뻐지는 신호,<br><span>뷰티 시그널</span>을 켜세요!",
+                keywordLabel: "시술/고민 키워드", keywordPlace: "ex. 인모드, 입술필러",
+                typeLabel: "원하는 방식", budgetLabel: "예상 비용", timeLabel: "매칭 마감",
+                submitBtn: "뷰티 시그널 송출", statTitle: "언니들의 뷰티 트렌드", chartTitle1: "🔥 인기있는 방식 Top 4"
+            },
+            options: {
+                type: [{val:"together", label:"정보교환"}, {val:"empathy", label:"동행"}, {val:"exchange", label:"공구"}, {val:"transfer", label:"양도"}],
+                budget: [{val:"free", label:"미정"}, {val:"30", label:"10만원대"}, {val:"50", label:"50만원대"}, {val:"high", label:"고가"}],
+                time: [{val:"1h", label:"급구"}, {val:"today", label:"오늘"}, {val:"week", label:"이번주"}]
+            }
+        };
+        */
+
+        /* [옵션 2] 욕구지도 시그널 (현재 활성화) */
+        const APP_CONFIG = {
+    appName: "desire_map_basic", 
+    colors: {
+        main: "#2980b9",    // 오션 블루 (신뢰/희망)
+        accent: "#e74c3c",  // 레드 (욕망/강렬함)
+        bg: "#ecf0f1"       // 쿨 화이트
+    },
+    text: {
+        mainTitle: "당신의 모든 욕구,<br><span>욕구 지도</span>에 기록하세요.",
+        keywordLabel: "무엇을 원하시나요?",
+        keywordPlace: "ex. 치킨, 맥북 프로, 이직, 휴가, 로또",
+        typeLabel: "욕구의 종류",
+        budgetLabel: "필요 비용",
+        timeLabel: "원하는 시기",
+        submitBtn: "지도에 좌표 찍기",
+        inputBtn: "욕구 기록하기",
+        statsBtn: "📊 전체 지도 보기",
+        statTitle: "사람들의 실시간<br><span>욕망 트렌드</span>",
+        chartTitle1: "🔥 가장 많이 원하는 것 Top 5"
+    },
+    options: {
+        type: [
+            { val: "food", label: "🍔 식욕 (맛집/배달)" },
+            { val: "item", label: "🎁 물욕 (쇼핑/장비)" },
+            { val: "experience", label: "✈️ 경험 (여행/문화)" },
+            { val: "goal", label: "🏆 성취 (공부/이직/운동)" }
+        ],
+        budget: [
+            { val: "small", label: "소소하게 (3만원 이하)" },
+            { val: "medium", label: "적당히 (10만원 대)" },
+            { val: "big", label: "큰 맘 먹고 (50만원 ↑)" },
+            { val: "dream", label: "상상 그 이상 (가격미정)" }
+        ],
+        time: [
+            { val: "now", label: "지금 당장 (Urgent)" },
+            { val: "week", label: "이번 주 내로" },
+            { val: "month", label: "이번 달 안에" },
+            { val: "bucket", label: "언젠가는 (버킷리스트)" }
+        ]
+    }
+};
+        // ============================================================
+        // 1. 화면 초기화 (Config 적용)
+        // ============================================================
+        document.documentElement.style.setProperty('--main-color', APP_CONFIG.colors.main);
+        document.documentElement.style.setProperty('--accent-color', APP_CONFIG.colors.accent);
+        document.documentElement.style.setProperty('--bg-color', APP_CONFIG.colors.bg);
+        
+        document.getElementById('mainTitle').innerHTML = APP_CONFIG.text.mainTitle;
+        document.getElementById('keywordLabel').innerText = APP_CONFIG.text.keywordLabel;
+        document.getElementById('keyword').placeholder = APP_CONFIG.text.keywordPlace;
+        document.getElementById('typeLabel').innerText = APP_CONFIG.text.typeLabel;
+        document.getElementById('budgetLabel').innerText = APP_CONFIG.text.budgetLabel;
+        document.getElementById('timeLabel').innerText = APP_CONFIG.text.timeLabel;
+        document.getElementById('submitBtn').innerText = APP_CONFIG.text.submitBtn;
+        document.getElementById('statTitle').innerHTML = APP_CONFIG.text.statTitle;
+        document.getElementById('chartTitle1').innerText = APP_CONFIG.text.chartTitle1;
+
+        // 옵션 채우기 함수
+        function fillSelect(id, list) {
+            const el = document.getElementById(id);
+            list.forEach(opt => {
+                let option = document.createElement('option');
+                option.value = opt.val;
+                option.text = opt.label;
+                el.appendChild(option);
+            });
+        }
+        fillSelect('typeSelect', APP_CONFIG.options.type);
+        fillSelect('budgetSelect', APP_CONFIG.options.budget);
+        fillSelect('timeSelect', APP_CONFIG.options.time);
+
+        // 전역 함수로 만들기 (HTML에서 onclick으로 쓰기 위해)
+        window.sendSignal = function() {
+            const keyword = document.getElementById('keyword').value;
+            if(!keyword) { alert('키워드를 입력해주세요!'); return; }
+
+            const data = {
+                keyword: keyword,
+                type: document.getElementById('typeSelect').value,
+                budget: document.getElementById('budgetSelect').value,
+                time: document.getElementById('timeSelect').value,
+                timestamp: new Date().toISOString()
+            };
+
+            document.getElementById('loadingMsg').style.display = 'block';
+            document.getElementById('submitBtn').disabled = true;
+
+            // Firebase에 데이터 저장
+            push(ref(db, APP_CONFIG.appName), data)
+                .then(() => {
+                    alert('신호가 정상적으로 전송되었습니다! 📡');
+                    document.getElementById('keyword').value = ''; // 초기화
+                })
+                .catch((error) => {
+                    alert('전송 실패: ' + error.message);
+                })
+                .finally(() => {
+                    document.getElementById('loadingMsg').style.display = 'none';
+                    document.getElementById('submitBtn').disabled = false;
+                });
+        };
+
+        // ============================================================
+        // 2. 통계 기능 (데이터 가져오기 및 차트 그리기)
+        // ============================================================
+        let chartInstance = null;
+
+        window.toggleStats = function() {
+            const statsDiv = document.getElementById('statsSection');
+            if(statsDiv.style.display === 'none' || statsDiv.style.display === '') {
+                statsDiv.style.display = 'block';
+                loadStats(); // 데이터 로드 시작
+            } else {
+                statsDiv.style.display = 'none';
+            }
+        };
+
+        function loadStats() {
+            // 최근 100개 데이터만 가져와서 통계 내기 (데이터 절약)
+            const recentPosts = query(ref(db, APP_CONFIG.appName), limitToLast(100));
+            
+            onValue(recentPosts, (snapshot) => {
+                const data = snapshot.val();
+                if(!data) return;
+
+                // 데이터 집계
+                const typeCounts = {};
+                Object.values(data).forEach(item => {
+                    // Config에 있는 라벨로 변환해서 카운트
+                    const labelObj = APP_CONFIG.options.type.find(opt => opt.val === item.type);
+                    const label = labelObj ? labelObj.label : item.type;
+                    typeCounts[label] = (typeCounts[label] || 0) + 1;
+                });
+
+                drawChart(typeCounts);
+            });
+        }
+
+        function drawChart(counts) {
+            const ctx = document.getElementById('typeChart').getContext('2d');
+            
+            // 기존 차트 있으면 삭제 (겹침 방지)
+            if(chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'doughnut', // 도넛 차트
+                data: {
+                    labels: Object.keys(counts),
+                    datasets: [{
+                        data: Object.values(counts),
+                        backgroundColor: [
+                            APP_CONFIG.colors.main,
+                            APP_CONFIG.colors.accent,
+                            '#bdc3c7',
+                            '#34495e'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
